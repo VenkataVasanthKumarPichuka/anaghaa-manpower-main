@@ -7,19 +7,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
-
 jobs:
   # ========== BUILD & TEST ==========
   build-and-test:
     runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -33,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run Linter (ESLint)
+      - name: Run Linter
         run: npm run lint
         continue-on-error: true
 
@@ -43,26 +35,27 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dist-files
+          name: dist
           path: ./dist
 
-  # ========== DEPLOY (only on main branch push) ==========
+  # ========== DEPLOY ==========
   deploy:
     needs: build-and-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
     steps:
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
-          name: dist-files
+          name: dist
           path: ./dist
 
       - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          artifact_name: dist-files
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          force_orphan: true
