@@ -1,0 +1,54 @@
+version: "3.8"
+
+services:
+  # Floci (Local AWS)
+  floci:
+    image: floci/floci:latest
+    container_name: floci-aws
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=ec2,ecr,ecs,eks,s3,dynamodb,lambda,iam,sqs,sns,apigateway,cloudformation,cloudwatch,logs
+      - DEFAULT_REGION=us-east-1
+    volumes:
+      - floci-data:/tmp/floci
+    networks:
+      - aws-network
+
+  # Your Website
+  website:
+    image: vasanth160/anaghaa-manpower:latest
+    container_name: anaghaa-website
+    ports:
+      - "8080:80"
+    depends_on:
+      - floci
+    environment:
+      - AWS_ENDPOINT_URL=http://floci:4566
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+    networks:
+      - aws-network
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: anaghaa-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - website
+      - floci
+    networks:
+      - aws-network
+
+volumes:
+  floci-data:
+
+networks:
+  aws-network:
+    driver: bridge
