@@ -1,61 +1,61 @@
-name: Deploy Anaghaa Manpower Website
+name: Build, Test & Deploy
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  # ========== BUILD & TEST ==========
+  build-and-test:
     runs-on: ubuntu-latest
     
     steps:
-      # Step 1: Checkout code
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
-      # Step 3: Install dependencies
       - name: Install dependencies
         run: npm ci
 
-      # Step 4: Build the project
+      - name: Run Linter
+        run: npm run lint
+        continue-on-error: true
+
       - name: Build project
         run: npm run build
 
-      # Step 5: Deploy to VPS via SSH
-      - name: Deploy to Server
-        uses: appleboy/ssh-action@v1.2.0
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT || '22' }}
-          script: |
-            echo "🚀 Starting deployment of Anaghaa Manpower..."
-            
-            # Navigate to app directory
-            cd /opt/apps/anaghaa-manpower
-            
-            # Pull latest code
-            git pull origin main
-            
-            # Install dependencies
-            npm ci
-            
-            # Build the project
-            npm run build
-            
-            # Copy built files to nginx web root
-            sudo cp -r dist/* /var/www/anaghaa-manpower/
-            
-            # Restart nginx
-            sudo systemctl reload nginx
-            
-            echo "✅ Deployment complete!"
+          name: dist
+          path: ./dist
+
+  # ========== DEPLOY ==========
+  deploy:
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: ./dist
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          force_orphan: true
