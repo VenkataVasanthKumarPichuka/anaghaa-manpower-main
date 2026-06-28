@@ -69,3 +69,29 @@ Floci (Local S3)	✅ Working
 Docker Desktop	✅ Running
 Local Build	✅ Successful
 Local Deployment	✅ Files uploaded to Floci
+
+Check Floci Container is Running
+powershell
+docker ps | findstr floci
+You should see:
+plain
+floci   Up   0.0.0.0:4566->4566/tcp
+If not running:
+powershell
+docker start floci
+2. Check Floci S3 Bucket Exists
+powershell
+aws s3 ls --endpoint-url http://localhost:4566
+You should see:
+plain
+2026-06-28 19:07:42 anaghaa-website-bucket
+3. Check Files in the Bucket
+powershell
+aws s3 ls s3://anaghaa-website-bucket/ --endpoint-url http://localhost:4566
+You should see:
+plain
+                           PRE assets/
+2026-06-28 19:07:43     192844 anaghaa-logo.png
+2026-06-28 19:07:43       9522 favicon.svg
+2026-06-28 19:07:43       5031 icons.svg
+2026-06-28 19:07:43        471 index.html
