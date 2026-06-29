@@ -1,4 +1,4 @@
-name: Build, Test & Deploy to Floci S3 + Docker Hub
+name: Build, Test & Deploy to Docker Hub
 
 on:
   push:
@@ -33,37 +33,6 @@ jobs:
         with:
           name: dist
           path: ./dist
-
-  # ========== DEPLOY TO FLOCI S3 ==========
-  deploy-to-floci:
-    needs: build-and-test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: ./dist
-
-      - name: Deploy to Floci S3
-        run: |
-          # Configure AWS for Floci
-          aws configure set aws_access_key_id test
-          aws configure set aws_secret_access_key test
-          aws configure set region us-east-1
-          
-          # Create bucket if not exists
-          aws s3 mb s3://anaghaa-website-bucket \
-            --endpoint-url http://localhost:4566 \
-            2>/dev/null || true
-          
-          # Sync files to S3
-          aws s3 sync ./dist s3://anaghaa-website-bucket \
-            --endpoint-url http://localhost:4566 \
-            --delete
-          
-          echo "✅ Deployed to Floci S3!"
-          echo "Access at: http://localhost:4566/anaghaa-website-bucket/"
 
   # ========== DEPLOY TO DOCKER HUB ==========
   deploy-to-docker:
