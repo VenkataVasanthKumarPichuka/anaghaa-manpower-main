@@ -1,94 +1,9 @@
-# name: Build, Test & Deploy to Docker Hub
-
-# on:
-#   push:
-#     branches: [main]
-#   workflow_dispatch:
-
-# jobs:
-#   # ========== BUILD & TEST ==========
-#   build-and-test:
-#     runs-on: ubuntu-latest
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v4
-
-#       - name: Setup Node.js
-#         uses: actions/setup-node@v4
-#         with:
-#           node-version: '24'
-#           cache: 'npm'
-
-#       - name: Install dependencies
-#         run: npm ci
-
-#       - name: Run Linter
-#         run: npm run lint || true
-
-#       - name: Build project
-#         run: npm run build
-
-#       - name: Upload build artifact
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: dist
-#           path: ./dist
-
-#   # ========== DEPLOY TO DOCKER HUB ==========
-#   deploy-to-docker:
-#     needs: build-and-test
-#     runs-on: ubuntu-latest
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v4
-
-#       - name: Set up Docker Buildx
-#         uses: docker/setup-buildx-action@v3
-
-#       - name: Login to Docker Hub
-#         uses: docker/login-action@v3
-#         with:
-#           username: ${{ secrets.DOCKER_USERNAME }}
-#           password: ${{ secrets.DOCKER_PASSWORD }}
-
-#       - name: Build and push Docker image
-#         uses: docker/build-push-action@v5
-#         with:
-#           context: .
-#           push: true
-#           tags: |
-#             ${{ secrets.DOCKER_USERNAME }}/anaghaa-manpower:latest
-#             ${{ secrets.DOCKER_USERNAME }}/anaghaa-manpower:${{ github.sha }}
-
-#       - name: Output image info
-#         run: |
-#           echo "🐳 Docker Image pushed successfully!"
-#           echo "Image: ${{ secrets.DOCKER_USERNAME }}/anaghaa-manpower:latest"
-#           echo "Tag: ${{ github.sha }}"
-
-
-
-name: Build, Test, SonarQube, Docker Hub & Deploy to GitHub Pages
+name: Build, Test & Deploy to Docker Hub
 
 on:
   push:
     branches: [main]
-  pull_request:
-    types: [opened, synchronize, reopened]
   workflow_dispatch:
-
-env:
-  AWS_REGION: us-east-1
-  DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/anaghaa-manpower
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
 
 jobs:
   # ========== BUILD & TEST ==========
@@ -97,8 +12,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -112,9 +25,6 @@ jobs:
       - name: Run Linter
         run: npm run lint || true
 
-      - name: Run Tests
-        run: npm run test || true
-
       - name: Build project
         run: npm run build
 
@@ -124,40 +34,9 @@ jobs:
           name: dist
           path: ./dist
 
-  # ========== SONARQUBE CODE ANALYSIS ==========
-  sonarqube:
-    needs: build-and-test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v4
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-        with:
-          args: >
-            -Dsonar.projectKey=anaghaa-manpower
-            -Dsonar.projectName=Anaghaa Manpower
-            -Dsonar.sources=.
-            -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/.git/**,**/coverage/**
-            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
-
-      - name: SonarQube Quality Gate Check
-        id: sonarqube-quality-gate-check
-        uses: SonarSource/sonarqube-quality-gate-action@v1
-        timeout-minutes: 5
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-
   # ========== DEPLOY TO DOCKER HUB ==========
   deploy-to-docker:
-    needs: [build-and-test, sonarqube]
+    needs: build-and-test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -178,75 +57,199 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ env.DOCKER_IMAGE }}:latest
-            ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ secrets.DOCKER_USERNAME }}/anaghaa-manpower:latest
+            ${{ secrets.DOCKER_USERNAME }}/anaghaa-manpower:${{ github.sha }}
 
-  # ========== DEPLOY TO GITHUB PAGES ==========
-  deploy-to-github-pages:
-    needs: [build-and-test, sonarqube, deploy-to-docker]
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: ./dist
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload to GitHub Pages
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./dist
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-
-  # ========== CLOUDWATCH LOGS & ALERTS ==========
-  cloudwatch-alerts:
-    needs: [deploy-to-github-pages]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Push Deployment Logs to CloudWatch
+      - name: Output image info
         run: |
-          LOG_STREAM="deploy-$(date +%Y-%m-%d-%H-%M-%S)"
-          aws logs create-log-stream \
-            --log-group-name /github-actions/anaghaa-manpower \
-            --log-stream-name $LOG_STREAM || true
+          echo "🐳 Docker Image pushed successfully!"
+          echo "Image: ${{ secrets.DOCKER_USERNAME }}/anaghaa-manpower:latest"
+          echo "Tag: ${{ github.sha }}"
 
-          DEPLOYMENT_LOG=$(cat <<EOF
-          {
-            "timestamp": $(date +%s%3N),
-            "message": "GitHub Pages Deploy | Commit: ${{ github.sha }} | Branch: ${{ github.ref_name }} | Actor: ${{ github.actor }} | Docker: ${{ env.DOCKER_IMAGE }}:${{ github.sha }} | Pages URL: ${{ needs.deploy-to-github-pages.outputs.page_url }}"
-          }
-          EOF
-          )
 
-          aws logs put-log-events \
-            --log-group-name /github-actions/anaghaa-manpower \
-            --log-stream-name $LOG_STREAM \
-            --log-events "$DEPLOYMENT_LOG" || true
 
-      - name: Send SNS Alert
-        run: |
-          MESSAGE="✅ Pipeline Complete | GitHub Pages Deployed | Commit: ${{ github.sha }} | URL: https://${{ secrets.CUSTOM_DOMAIN }}"
-          aws sns publish \
-            --topic-arn ${{ secrets.SNS_TOPIC_ARN }} \
-            --message "$MESSAGE" \
-            --subject "GitHub Pages Deployed - Anaghaa Manpower" || true
+
+
+
+# name: Build, Test, SonarQube, Docker Hub & Deploy to GitHub Pages
+
+# on:
+#   push:
+#     branches: [main]
+#   pull_request:
+#     types: [opened, synchronize, reopened]
+#   workflow_dispatch:
+
+# env:
+#   AWS_REGION: us-east-1
+#   DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/anaghaa-manpower
+
+# permissions:
+#   contents: read
+#   pages: write
+#   id-token: write
+
+# concurrency:
+#   group: "pages"
+#   cancel-in-progress: false
+
+# jobs:
+#   # ========== BUILD & TEST ==========
+#   build-and-test:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 0
+
+#       - name: Setup Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: '24'
+#           cache: 'npm'
+
+#       - name: Install dependencies
+#         run: npm ci
+
+#       - name: Run Linter
+#         run: npm run lint || true
+
+#       - name: Run Tests
+#         run: npm run test || true
+
+#       - name: Build project
+#         run: npm run build
+
+#       - name: Upload build artifact
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: dist
+#           path: ./dist
+
+#   # ========== SONARQUBE CODE ANALYSIS ==========
+#   sonarqube:
+#     needs: build-and-test
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 0
+
+#       - name: SonarQube Scan
+#         uses: SonarSource/sonarqube-scan-action@v4
+#         env:
+#           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+#           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+#         with:
+#           args: >
+#             -Dsonar.projectKey=anaghaa-manpower
+#             -Dsonar.projectName=Anaghaa Manpower
+#             -Dsonar.sources=.
+#             -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/.git/**,**/coverage/**
+#             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+
+#       - name: SonarQube Quality Gate Check
+#         id: sonarqube-quality-gate-check
+#         uses: SonarSource/sonarqube-quality-gate-action@v1
+#         timeout-minutes: 5
+#         env:
+#           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+#           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+#   # ========== DEPLOY TO DOCKER HUB ==========
+#   deploy-to-docker:
+#     needs: [build-and-test, sonarqube]
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Set up Docker Buildx
+#         uses: docker/setup-buildx-action@v3
+
+#       - name: Login to Docker Hub
+#         uses: docker/login-action@v3
+#         with:
+#           username: ${{ secrets.DOCKER_USERNAME }}
+#           password: ${{ secrets.DOCKER_PASSWORD }}
+
+#       - name: Build and push Docker image
+#         uses: docker/build-push-action@v5
+#         with:
+#           context: .
+#           push: true
+#           tags: |
+#             ${{ env.DOCKER_IMAGE }}:latest
+#             ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+#           cache-from: type=gha
+#           cache-to: type=gha,mode=max
+
+#   # ========== DEPLOY TO GITHUB PAGES ==========
+#   deploy-to-github-pages:
+#     needs: [build-and-test, sonarqube, deploy-to-docker]
+#     if: github.ref == 'refs/heads/main'
+#     runs-on: ubuntu-latest
+#     environment:
+#       name: github-pages
+#       url: ${{ steps.deployment.outputs.page_url }}
+#     steps:
+#       - name: Download build artifact
+#         uses: actions/download-artifact@v4
+#         with:
+#           name: dist
+#           path: ./dist
+
+#       - name: Setup Pages
+#         uses: actions/configure-pages@v5
+
+#       - name: Upload to GitHub Pages
+#         uses: actions/upload-pages-artifact@v3
+#         with:
+#           path: ./dist
+
+#       - name: Deploy to GitHub Pages
+#         id: deployment
+#         uses: actions/deploy-pages@v4
+
+#   # ========== CLOUDWATCH LOGS & ALERTS ==========
+#   cloudwatch-alerts:
+#     needs: [deploy-to-github-pages]
+#     if: always()
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Configure AWS Credentials
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-region: ${{ env.AWS_REGION }}
+
+#       - name: Push Deployment Logs to CloudWatch
+#         run: |
+#           LOG_STREAM="deploy-$(date +%Y-%m-%d-%H-%M-%S)"
+#           aws logs create-log-stream \
+#             --log-group-name /github-actions/anaghaa-manpower \
+#             --log-stream-name $LOG_STREAM || true
+
+#           DEPLOYMENT_LOG=$(cat <<EOF
+#           {
+#             "timestamp": $(date +%s%3N),
+#             "message": "GitHub Pages Deploy | Commit: ${{ github.sha }} | Branch: ${{ github.ref_name }} | Actor: ${{ github.actor }} | Docker: ${{ env.DOCKER_IMAGE }}:${{ github.sha }} | Pages URL: ${{ needs.deploy-to-github-pages.outputs.page_url }}"
+#           }
+#           EOF
+#           )
+
+#           aws logs put-log-events \
+#             --log-group-name /github-actions/anaghaa-manpower \
+#             --log-stream-name $LOG_STREAM \
+#             --log-events "$DEPLOYMENT_LOG" || true
+
+#       - name: Send SNS Alert
+#         run: |
+#           MESSAGE="✅ Pipeline Complete | GitHub Pages Deployed | Commit: ${{ github.sha }} | URL: https://${{ secrets.CUSTOM_DOMAIN }}"
+#           aws sns publish \
+#             --topic-arn ${{ secrets.SNS_TOPIC_ARN }} \
+#             --message "$MESSAGE" \
+#             --subject "GitHub Pages Deployed - Anaghaa Manpower" || true
